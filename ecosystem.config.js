@@ -1,4 +1,4 @@
-module.exports = {
+export default {
   apps: [{
     name: "aiagent-backend",
     script: "server.js",

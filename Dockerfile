@@ -18,5 +18,5 @@ RUN mkdir -p uploads
 # Expose port
 EXPOSE 8000
 
-# Start the application using PM2 with ecosystem file
-CMD ["pm2-runtime", "ecosystem.config.js"] 
+# Start the application using PM2
+CMD ["pm2-runtime", "start", "server.js", "--name", "aiagent-backend"] 
