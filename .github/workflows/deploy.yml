@@ -17,6 +17,40 @@ jobs:
           key: ${{ secrets.DROPLET_SSH_KEY }}
           debug: true
           script: |
+            # Install Nginx if not installed
+            if ! command -v nginx &> /dev/null; then
+              echo "Installing Nginx..."
+              apt-get update
+              apt-get install -y nginx
+            fi
+            
+            # Configure Nginx
+            cat > /etc/nginx/sites-available/aiagent-backend << 'EOL'
+            server {
+                listen 80;
+                server_name _;
+
+                location / {
+                    proxy_pass http://localhost:8000;
+                    proxy_http_version 1.1;
+                    proxy_set_header Upgrade $http_upgrade;
+                    proxy_set_header Connection 'upgrade';
+                    proxy_set_header Host $host;
+                    proxy_cache_bypass $http_upgrade;
+                }
+            }
+            EOL
+
+            # Enable the site
+            ln -sf /etc/nginx/sites-available/aiagent-backend /etc/nginx/sites-enabled/
+            rm -f /etc/nginx/sites-enabled/default
+            
+            # Test Nginx configuration
+            nginx -t
+            
+            # Restart Nginx
+            systemctl restart nginx
+            
             # Navigate to the project directory
             cd /root/aiAgentBackend
             

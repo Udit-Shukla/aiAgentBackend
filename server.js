@@ -20,6 +20,7 @@ app.use(express.json());
 // Routes
 app.use('/api/compare-stocks', compareRoute);
 app.use('/api/generate-insights', generateInsightsRoute);
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -30,7 +31,7 @@ const PORT = process.env.PORT || 8000;
 
 // Start server with error handling
 const server = app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 }).on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`Port ${PORT} is already in use`);
