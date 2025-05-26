@@ -15,6 +15,7 @@ jobs:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USERNAME }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
+          debug: true
           script: |
             cd /root/aiAgentBackend
             git pull origin main
