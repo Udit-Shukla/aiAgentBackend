@@ -7,6 +7,7 @@ COPY package*.json ./
 
 # Install dependencies
 RUN npm install
+RUN npm install -g pm2
 
 # Copy source code
 COPY . .
@@ -17,5 +18,5 @@ RUN mkdir -p uploads
 # Expose port
 EXPOSE 8000
 
-# Start the application
-CMD ["npm", "start"] 
+# Start the application using PM2 with ecosystem file
+CMD ["pm2-runtime", "ecosystem.config.js"] 
