@@ -7,6 +7,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -18,7 +19,7 @@ jobs:
           username: ${{ secrets.DROPLET_USERNAME }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
           source: nginx.conf
-          target: /tmp/nginx.conf
+          target: /tmp
 
       - name: SSH into Droplet and deploy
         uses: appleboy/ssh-action@v0.1.10
@@ -27,26 +28,36 @@ jobs:
           username: ${{ secrets.DROPLET_USERNAME }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
+            set -e  # Stop on error
+
             # Ensure required packages
             apt-get update
             apt-get install -y nginx certbot python3-certbot-nginx git
 
-            # Allow HTTP/HTTPS traffic
+            # Allow traffic through firewall
             ufw allow 'Nginx Full'
             ufw allow OpenSSH
             ufw --force enable
 
-            # Deploy nginx config
-            mv /tmp/nginx.conf /etc/nginx/sites-available/aiagent-backend
-            ln -sf /etc/nginx/sites-available/aiagent-backend /etc/nginx/sites-enabled/default
+            # Deploy nginx config if changed
+            if ! cmp -s /tmp/nginx.conf /etc/nginx/sites-available/aiagent-backend; then
+              echo "Nginx config changed. Updating..."
+              mv /tmp/nginx.conf /etc/nginx/sites-available/aiagent-backend
+              ln -sf /etc/nginx/sites-available/aiagent-backend /etc/nginx/sites-enabled/default
+              nginx -t && systemctl reload nginx
+            else
+              echo "Nginx config unchanged."
+            fi
 
-            # Test and reload Nginx
-            nginx -t && systemctl reload nginx
+            # Only run Certbot if cert doesn't exist
+            if [ ! -f /etc/letsencrypt/live/aiagents.worxstream.io/fullchain.pem ]; then
+              echo "Issuing SSL certificate..."
+              certbot --nginx -d aiagents.worxstream.io --non-interactive --agree-tos --email ${{ secrets.EMAIL }}
+            else
+              echo "SSL certificate already exists."
+            fi
 
-            # Issue SSL cert (will fail if domain is not pointing to droplet)
-            certbot --nginx -d aiagents.worxstream.io --non-interactive --agree-tos --email ${{ secrets.EMAIL }}
-
-            # Clone repo if not already cloned
+            # Clone or pull repo
             APP_DIR=/root/aiAgentBackend
             if [ ! -d "$APP_DIR" ]; then
               git clone https://github.com/Udit-Shukla/aiAgentBackend.git $APP_DIR
