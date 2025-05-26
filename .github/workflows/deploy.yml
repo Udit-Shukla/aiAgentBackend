@@ -21,6 +21,12 @@ jobs:
               apt-get install -y nginx
             fi
 
+            # Install Certbot if not installed
+            if ! command -v certbot &> /dev/null; then
+              apt-get update
+              apt-get install -y certbot python3-certbot-nginx
+            fi
+
             # Configure firewall
             ufw allow 'Nginx Full'
             ufw allow OpenSSH
@@ -30,7 +36,8 @@ jobs:
             cat > /etc/nginx/sites-available/default << 'EOL'
             server {
                 listen 80;
-                server_name _;
+                listen [::]:80;
+                server_name aiagents.worxstream.io;
 
                 location / {
                     # Handle preflight requests
@@ -70,6 +77,9 @@ jobs:
 
             # Restart Nginx
             systemctl restart nginx
+
+            # Obtain SSL certificate
+            certbot --nginx -d aiagents.worxstream.io --non-interactive --agree-tos --email ${{ secrets.EMAIL }}
 
             # Create .env file if it doesn't exist
             if [ ! -f .env ]; then
