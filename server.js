@@ -5,8 +5,16 @@ import compareRoute from './routes/compare.js';
 import generateInsightsRoute from './routes/generateInsights.js';
 const app = express();
 
+// CORS configuration
+const corsOptions = {
+  origin: ['https://a-iagents-uditshuklas-projects.vercel.app', 'http://localhost:3000'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Routes
