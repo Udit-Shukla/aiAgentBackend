@@ -8,102 +8,56 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to DigitalOcean
-        uses: appleboy/ssh-action@master
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Upload Nginx config
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USERNAME }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          source: nginx.conf
+          target: /tmp/nginx.conf
+
+      - name: SSH into Droplet and deploy
+        uses: appleboy/ssh-action@v0.1.10
         with:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USERNAME }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
-            # Install Nginx if not installed
-            if ! command -v nginx &> /dev/null; then
-              apt-get update
-              apt-get install -y nginx
-            fi
+            # Ensure required packages
+            apt-get update
+            apt-get install -y nginx certbot python3-certbot-nginx git
 
-            # Install Certbot if not installed
-            if ! command -v certbot &> /dev/null; then
-              apt-get update
-              apt-get install -y certbot python3-certbot-nginx
-            fi
-
-            # Configure firewall
+            # Allow HTTP/HTTPS traffic
             ufw allow 'Nginx Full'
             ufw allow OpenSSH
             ufw --force enable
 
-            # Copy Nginx configuration
-            cat > /etc/nginx/sites-available/default << 'EOL'
-            # Redirect HTTP to HTTPS
-            server {
-                listen 80;
-                listen [::]:80;
-                server_name aiagents.worxstream.io;
-                return 301 https://$server_name$request_uri;
-            }
+            # Deploy nginx config
+            mv /tmp/nginx.conf /etc/nginx/sites-available/aiagent-backend
+            ln -sf /etc/nginx/sites-available/aiagent-backend /etc/nginx/sites-enabled/default
 
-            # HTTPS server
-            server {
-                listen 443 ssl http2;
-                listen [::]:443 ssl http2;
-                server_name aiagents.worxstream.io;
+            # Test and reload Nginx
+            nginx -t && systemctl reload nginx
 
-                # SSL configuration will be added by Certbot
-
-                location / {
-                    # Handle preflight requests
-                    if ($request_method = 'OPTIONS') {
-                        add_header 'Access-Control-Allow-Origin' 'https://a-iagents-uditshuklas-projects.vercel.app' always;
-                        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
-                        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-                        add_header 'Access-Control-Allow-Credentials' 'true' always;
-                        add_header 'Access-Control-Max-Age' 1728000;
-                        add_header 'Content-Type' 'text/plain; charset=utf-8';
-                        add_header 'Content-Length' 0;
-                        return 204;
-                    }
-
-                    proxy_pass http://localhost:8000;
-                    proxy_http_version 1.1;
-                    proxy_set_header Upgrade $http_upgrade;
-                    proxy_set_header Connection 'upgrade';
-                    proxy_set_header Host $host;
-                    proxy_cache_bypass $http_upgrade;
-                    
-                    # CORS headers
-                    add_header 'Access-Control-Allow-Origin' 'https://a-iagents-uditshuklas-projects.vercel.app' always;
-                    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
-                    add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-                    add_header 'Access-Control-Allow-Credentials' 'true' always;
-                }
-
-                # Logging
-                access_log /var/log/nginx/access.log;
-                error_log /var/log/nginx/error.log;
-            }
-            EOL
-
-            # Test Nginx configuration
-            nginx -t
-
-            # Restart Nginx
-            systemctl restart nginx
-
-            # Obtain SSL certificate
+            # Issue SSL cert (will fail if domain is not pointing to droplet)
             certbot --nginx -d aiagents.worxstream.io --non-interactive --agree-tos --email ${{ secrets.EMAIL }}
 
-            # Create .env file if it doesn't exist
-            if [ ! -f .env ]; then
-              touch .env
+            # Clone repo if not already cloned
+            APP_DIR=/root/aiAgentBackend
+            if [ ! -d "$APP_DIR" ]; then
+              git clone https://github.com/Udit-Shukla/aiAgentBackend.git $APP_DIR
             fi
-
-            # Pull latest changes
+            cd $APP_DIR
+            git reset --hard
             git pull origin main
 
-            # Stop and remove existing container
+            # Build and run Docker
+            if [ ! -f .env ]; then touch .env; fi
             docker stop aiagent-backend || true
             docker rm aiagent-backend || true
-
-            # Build and run new container
             docker build -t aiagent-backend .
-            docker run -d --name aiagent-backend -p 8000:8000 --env-file .env aiagent-backend 
+            docker run -d --name aiagent-backend -p 8000:8000 --env-file .env aiagent-backend
