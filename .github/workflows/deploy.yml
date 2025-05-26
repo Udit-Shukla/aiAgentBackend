@@ -2,8 +2,7 @@ name: Deploy to DigitalOcean
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
   deploy:
@@ -15,38 +14,18 @@ jobs:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USERNAME }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
-          debug: true
           script: |
             # Install Nginx if not installed
             if ! command -v nginx &> /dev/null; then
-              echo "Installing Nginx..."
               apt-get update
               apt-get install -y nginx
             fi
-            
-            # Configure Nginx
-            cat > /etc/nginx/sites-available/aiagent-backend << 'EOL'
+
+            # Create Nginx configuration
+            cat > /etc/nginx/sites-available/default << 'EOL'
             server {
                 listen 80;
                 server_name _;
-
-                # CORS headers
-                add_header 'Access-Control-Allow-Origin' 'https://a-iagents-uditshuklas-projects.vercel.app' always;
-                add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
-                add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-                add_header 'Access-Control-Allow-Credentials' 'true' always;
-
-                # Handle preflight requests
-                if ($request_method = 'OPTIONS') {
-                    add_header 'Access-Control-Allow-Origin' 'https://a-iagents-uditshuklas-projects.vercel.app' always;
-                    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
-                    add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-                    add_header 'Access-Control-Allow-Credentials' 'true' always;
-                    add_header 'Access-Control-Max-Age' 1728000;
-                    add_header 'Content-Type' 'text/plain; charset=utf-8';
-                    add_header 'Content-Length' 0;
-                    return 204;
-                }
 
                 location / {
                     proxy_pass http://localhost:8000;
@@ -56,61 +35,49 @@ jobs:
                     proxy_set_header Host $host;
                     proxy_cache_bypass $http_upgrade;
                     
-                    # Additional headers
-                    proxy_set_header X-Real-IP $remote_addr;
-                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto $scheme;
+                    # CORS headers
+                    add_header 'Access-Control-Allow-Origin' 'https://a-iagents-uditshuklas-projects.vercel.app' always;
+                    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
+                    add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+                    add_header 'Access-Control-Allow-Credentials' 'true' always;
+                    
+                    # Handle preflight requests
+                    if ($request_method = 'OPTIONS') {
+                        add_header 'Access-Control-Allow-Origin' 'https://a-iagents-uditshuklas-projects.vercel.app' always;
+                        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
+                        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+                        add_header 'Access-Control-Allow-Credentials' 'true' always;
+                        add_header 'Access-Control-Max-Age' 1728000;
+                        add_header 'Content-Type' 'text/plain; charset=utf-8';
+                        add_header 'Content-Length' 0;
+                        return 204;
+                    }
                 }
 
-                # Enable access logs
-                access_log /var/log/nginx/aiagent-backend-access.log;
-                error_log /var/log/nginx/aiagent-backend-error.log;
+                # Logging
+                access_log /var/log/nginx/access.log;
+                error_log /var/log/nginx/error.log;
             }
             EOL
 
-            # Enable the site
-            ln -sf /etc/nginx/sites-available/aiagent-backend /etc/nginx/sites-enabled/
-            rm -f /etc/nginx/sites-enabled/default
-            
             # Test Nginx configuration
             nginx -t
-            
+
             # Restart Nginx
             systemctl restart nginx
-            
-            # Navigate to the project directory
-            cd /root/aiAgentBackend
-            
+
             # Create .env file if it doesn't exist
-            if [ ! -f ".env" ]; then
-              echo "Creating .env file..."
-              echo "PORT=8000" > .env
-              echo "GITHUB_TOKEN=${{ secrets.TOKEN }}" >> .env
+            if [ ! -f .env ]; then
+              touch .env
             fi
-            
+
             # Pull latest changes
-            echo "Pulling latest changes..."
             git pull origin main
-            
-            # Stop and remove existing container if it exists
-            echo "Stopping existing container..."
+
+            # Stop and remove existing container
             docker stop aiagent-backend || true
             docker rm aiagent-backend || true
-            
-            # Build new image
-            echo "Building new Docker image..."
+
+            # Build and run new container
             docker build -t aiagent-backend .
-            
-            # Run new container
-            echo "Starting new container..."
-            docker run -d --name aiagent-backend -p 8000:8000 --env-file .env aiagent-backend
-            
-            # Verify container is running
-            echo "Verifying container status..."
-            docker ps | grep aiagent-backend
-            
-            # Check Nginx logs
-            echo "Checking Nginx logs..."
-            tail -n 50 /var/log/nginx/aiagent-backend-error.log
-            
-            echo "Deployment completed successfully!" 
+            docker run -d --name aiagent-backend -p 8000:8000 --env-file .env aiagent-backend 
