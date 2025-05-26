@@ -1,0 +1,24 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to DigitalOcean
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USERNAME }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            cd /root/aiAgentBackend
+            git pull origin main
+            docker stop aiagent-backend || true
+            docker rm aiagent-backend || true
+            docker build -t aiagent-backend .
+            docker run -d --name aiagent-backend -p 8000:8000 --env-file .env aiagent-backend 
