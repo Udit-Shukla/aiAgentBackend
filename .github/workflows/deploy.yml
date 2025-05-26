@@ -17,9 +17,35 @@ jobs:
           key: ${{ secrets.DROPLET_SSH_KEY }}
           debug: true
           script: |
+            # Navigate to the project directory
             cd /root/aiAgentBackend
+            
+            # Create .env file if it doesn't exist
+            if [ ! -f ".env" ]; then
+              echo "Creating .env file..."
+              echo "PORT=8000" > .env
+              echo "GITHUB_TOKEN=${{ secrets.TOKEN }}" >> .env
+            fi
+            
+            # Pull latest changes
+            echo "Pulling latest changes..."
             git pull origin main
+            
+            # Stop and remove existing container if it exists
+            echo "Stopping existing container..."
             docker stop aiagent-backend || true
             docker rm aiagent-backend || true
+            
+            # Build new image
+            echo "Building new Docker image..."
             docker build -t aiagent-backend .
-            docker run -d --name aiagent-backend -p 8000:8000 --env-file .env aiagent-backend 
+            
+            # Run new container
+            echo "Starting new container..."
+            docker run -d --name aiagent-backend -p 8000:8000 --env-file .env aiagent-backend
+            
+            # Verify container is running
+            echo "Verifying container status..."
+            docker ps | grep aiagent-backend
+            
+            echo "Deployment completed successfully!" 
