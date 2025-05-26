@@ -21,11 +21,28 @@ jobs:
               apt-get install -y nginx
             fi
 
-            # Create Nginx configuration
+            # Configure firewall
+            ufw allow 'Nginx Full'
+            ufw allow OpenSSH
+            ufw --force enable
+
+            # Copy Nginx configuration
             cat > /etc/nginx/sites-available/default << 'EOL'
             server {
                 listen 80;
                 server_name _;
+
+                # Handle preflight requests
+                if ($request_method = 'OPTIONS') {
+                    add_header 'Access-Control-Allow-Origin' 'https://a-iagents-uditshuklas-projects.vercel.app' always;
+                    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
+                    add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+                    add_header 'Access-Control-Allow-Credentials' 'true' always;
+                    add_header 'Access-Control-Max-Age' 1728000;
+                    add_header 'Content-Type' 'text/plain; charset=utf-8';
+                    add_header 'Content-Length' 0;
+                    return 204;
+                }
 
                 location / {
                     proxy_pass http://localhost:8000;
@@ -40,18 +57,6 @@ jobs:
                     add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
                     add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
                     add_header 'Access-Control-Allow-Credentials' 'true' always;
-                    
-                    # Handle preflight requests
-                    if ($request_method = 'OPTIONS') {
-                        add_header 'Access-Control-Allow-Origin' 'https://a-iagents-uditshuklas-projects.vercel.app' always;
-                        add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
-                        add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
-                        add_header 'Access-Control-Allow-Credentials' 'true' always;
-                        add_header 'Access-Control-Max-Age' 1728000;
-                        add_header 'Content-Type' 'text/plain; charset=utf-8';
-                        add_header 'Content-Length' 0;
-                        return 204;
-                    }
                 }
 
                 # Logging
