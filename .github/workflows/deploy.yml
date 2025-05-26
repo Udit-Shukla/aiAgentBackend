@@ -30,6 +30,24 @@ jobs:
                 listen 80;
                 server_name _;
 
+                # CORS headers
+                add_header 'Access-Control-Allow-Origin' 'https://a-iagents-uditshuklas-projects.vercel.app' always;
+                add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
+                add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+                add_header 'Access-Control-Allow-Credentials' 'true' always;
+
+                # Handle preflight requests
+                if ($request_method = 'OPTIONS') {
+                    add_header 'Access-Control-Allow-Origin' 'https://a-iagents-uditshuklas-projects.vercel.app' always;
+                    add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS, PUT, DELETE' always;
+                    add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization' always;
+                    add_header 'Access-Control-Allow-Credentials' 'true' always;
+                    add_header 'Access-Control-Max-Age' 1728000;
+                    add_header 'Content-Type' 'text/plain; charset=utf-8';
+                    add_header 'Content-Length' 0;
+                    return 204;
+                }
+
                 location / {
                     proxy_pass http://localhost:8000;
                     proxy_http_version 1.1;
@@ -37,7 +55,16 @@ jobs:
                     proxy_set_header Connection 'upgrade';
                     proxy_set_header Host $host;
                     proxy_cache_bypass $http_upgrade;
+                    
+                    # Additional headers
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme;
                 }
+
+                # Enable access logs
+                access_log /var/log/nginx/aiagent-backend-access.log;
+                error_log /var/log/nginx/aiagent-backend-error.log;
             }
             EOL
 
@@ -81,5 +108,9 @@ jobs:
             # Verify container is running
             echo "Verifying container status..."
             docker ps | grep aiagent-backend
+            
+            # Check Nginx logs
+            echo "Checking Nginx logs..."
+            tail -n 50 /var/log/nginx/aiagent-backend-error.log
             
             echo "Deployment completed successfully!" 
