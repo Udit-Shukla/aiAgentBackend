@@ -10,7 +10,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Upload Nginx config
         uses: appleboy/scp-action@v0.1.4
@@ -19,7 +19,7 @@ jobs:
           username: ${{ secrets.DROPLET_USERNAME }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
           source: nginx.conf
-          target: /tmp
+          target: /tmp/deploy-configs
 
       - name: SSH into Droplet and deploy
         uses: appleboy/ssh-action@v0.1.10
@@ -28,36 +28,36 @@ jobs:
           username: ${{ secrets.DROPLET_USERNAME }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
-            set -e  # Stop on error
+            set -e
 
-            # Ensure required packages
+            echo "📦 Installing dependencies..."
             apt-get update
             apt-get install -y nginx certbot python3-certbot-nginx git
 
-            # Allow traffic through firewall
+            echo "🔐 Configuring firewall..."
             ufw allow 'Nginx Full'
             ufw allow OpenSSH
+            ufw delete limit 22/tcp || true
+            ufw allow 22/tcp
             ufw --force enable
 
-            # Deploy nginx config if changed
-            if ! cmp -s /tmp/nginx.conf /etc/nginx/sites-available/aiagent-backend; then
-              echo "Nginx config changed. Updating..."
-              mv /tmp/nginx.conf /etc/nginx/sites-available/aiagent-backend
+            echo "📁 Updating nginx.conf if changed..."
+            if ! cmp -s /tmp/deploy-configs/nginx.conf /etc/nginx/sites-available/aiagent-backend; then
+              mv /tmp/deploy-configs/nginx.conf /etc/nginx/sites-available/aiagent-backend
               ln -sf /etc/nginx/sites-available/aiagent-backend /etc/nginx/sites-enabled/default
               nginx -t && systemctl reload nginx
             else
-              echo "Nginx config unchanged."
+              echo "No changes to nginx.conf"
             fi
 
-            # Only run Certbot if cert doesn't exist
+            echo "🔒 Checking SSL certificate..."
             if [ ! -f /etc/letsencrypt/live/aiagents.worxstream.io/fullchain.pem ]; then
-              echo "Issuing SSL certificate..."
               certbot --nginx -d aiagents.worxstream.io --non-interactive --agree-tos --email ${{ secrets.EMAIL }}
             else
-              echo "SSL certificate already exists."
+              echo "SSL certificate already exists"
             fi
 
-            # Clone or pull repo
+            echo "📥 Updating application code..."
             APP_DIR=/root/aiAgentBackend
             if [ ! -d "$APP_DIR" ]; then
               git clone https://github.com/Udit-Shukla/aiAgentBackend.git $APP_DIR
@@ -66,9 +66,9 @@ jobs:
             git reset --hard
             git pull origin main
 
-            # Build and run Docker
+            echo "🐳 Rebuilding Docker container..."
             if [ ! -f .env ]; then touch .env; fi
             docker stop aiagent-backend || true
             docker rm aiagent-backend || true
-            docker build -t aiagent-backend .
+            docker build --pull -t aiagent-backend .
             docker run -d --name aiagent-backend -p 8000:8000 --env-file .env aiagent-backend
