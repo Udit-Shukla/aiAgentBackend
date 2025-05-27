@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import compareRoute from './routes/compare.js';
 import generateInsightsRoute from './routes/generateInsights.js';
+import chatsRoute from './routes/chats.js';
 const app = express();
 
 // CORS configuration
@@ -20,6 +21,7 @@ app.use(express.json());
 // Routes
 app.use('/api/compare-stocks', compareRoute);
 app.use('/api/generate-insights', generateInsightsRoute);
+app.use('/api/chat', chatsRoute);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
