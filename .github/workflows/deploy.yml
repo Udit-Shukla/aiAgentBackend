@@ -12,15 +12,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Upload Nginx config
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.DROPLET_HOST }}
-          username: ${{ secrets.DROPLET_USERNAME }}
-          key: ${{ secrets.DROPLET_SSH_KEY }}
-          source: nginx.conf
-          target: /tmp/deploy-configs
-
       - name: SSH into Droplet and deploy
         uses: appleboy/ssh-action@v0.1.10
         with:
@@ -30,24 +21,33 @@ jobs:
           script: |
             set -e
 
-            echo "📦 Installing dependencies..."
+            echo "📦 Installing required packages..."
             apt-get update
             apt-get install -y nginx certbot python3-certbot-nginx git
 
-            echo "🔐 Configuring firewall..."
+            echo "🔐 Updating UFW firewall rules..."
             ufw allow 'Nginx Full'
             ufw allow OpenSSH
             ufw delete limit 22/tcp || true
             ufw allow 22/tcp
             ufw --force enable
 
-            echo "📁 Updating nginx.conf if changed..."
-            if ! cmp -s /tmp/deploy-configs/nginx.conf /etc/nginx/sites-available/aiagent-backend; then
-              mv /tmp/deploy-configs/nginx.conf /etc/nginx/sites-available/aiagent-backend
+            echo "📥 Cloning or pulling backend code..."
+            APP_DIR=/root/aiAgentBackend
+            if [ ! -d "$APP_DIR" ]; then
+              git clone https://github.com/Udit-Shukla/aiAgentBackend.git $APP_DIR
+            fi
+            cd $APP_DIR
+            git reset --hard
+            git pull origin main
+
+            echo "🧾 Updating Nginx config if changed..."
+            if ! cmp -s infra/nginx.conf /etc/nginx/sites-available/aiagent-backend; then
+              cp infra/nginx.conf /etc/nginx/sites-available/aiagent-backend
               ln -sf /etc/nginx/sites-available/aiagent-backend /etc/nginx/sites-enabled/default
               nginx -t && systemctl reload nginx
             else
-              echo "No changes to nginx.conf"
+              echo "No changes in nginx.conf"
             fi
 
             echo "🔒 Checking SSL certificate..."
@@ -57,16 +57,7 @@ jobs:
               echo "SSL certificate already exists"
             fi
 
-            echo "📥 Updating application code..."
-            APP_DIR=/root/aiAgentBackend
-            if [ ! -d "$APP_DIR" ]; then
-              git clone https://github.com/Udit-Shukla/aiAgentBackend.git $APP_DIR
-            fi
-            cd $APP_DIR
-            git reset --hard
-            git pull origin main
-
-            echo "🐳 Rebuilding Docker container..."
+            echo "🐳 Rebuilding and running Docker container..."
             if [ ! -f .env ]; then touch .env; fi
             docker stop aiagent-backend || true
             docker rm aiagent-backend || true
