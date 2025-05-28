@@ -7,42 +7,37 @@ export function chunkArray(array, size = 100) {
   
   // routes/insightRoute.js
   import express from 'express';
-  import ModelClient, { isUnexpected } from "@azure-rest/ai-inference";
-  import { AzureKeyCredential } from "@azure/core-auth";
+  import Anthropic from '@anthropic-ai/sdk';
   import { chunkArray } from '../utils/chunk.js';
   
   const router = express.Router();
   
-  const endpoint = "https://models.github.ai/inference";
-  const model = "openai/gpt-4.1";
-  const token = process.env["GITHUB_TOKEN"];
+  const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+  });
   
   async function getInsightFromChunk(type, dataChunk) {
-    const client = ModelClient(endpoint, new AzureKeyCredential(token));
-  
     const prompt = `Here are ${type} SKUs:
   ${JSON.stringify(dataChunk, null, 2)}
   \nPlease summarize trends, notable cost changes, and any patterns.`;
   
-    const response = await client.path("/chat/completions").post({
-      body: {
-        model,
-        temperature: 0.7,
-        top_p: 1,
-        messages: [
-          { role: "system", content: "You are a financial insight generator for SKU changes." },
-          { role: "user", content: prompt }
-        ],
-      },
+    const message = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 1024,
+      temperature: 0.7,
+      system: "You are a financial insight generator for SKU changes.",
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ]
     });
   
-    if (isUnexpected(response)) throw response.body.error;
-    return response.body.choices[0].message.content;
+    return message.content[0].text;
   }
   
   async function aggregateInsights(insights) {
-    const client = ModelClient(endpoint, new AzureKeyCredential(token));
-  
     const summaryPrompt = `Combine the following insights into a professional summary:
   ${insights.join("\n\n")}
   
@@ -55,20 +50,20 @@ export function chunkArray(array, size = 100) {
   
   Use <span style='color:green'> for positive, <span style='color:red'> for negative.`;
   
-    const response = await client.path("/chat/completions").post({
-      body: {
-        model,
-        temperature: 0.7,
-        top_p: 1,
-        messages: [
-          { role: "system", content: "You are a financial summary assistant." },
-          { role: "user", content: summaryPrompt }
-        ],
-      },
+    const message = await anthropic.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 2048,
+      temperature: 0.7,
+      system: "You are a financial summary assistant.",
+      messages: [
+        {
+          role: 'user',
+          content: summaryPrompt
+        }
+      ]
     });
   
-    if (isUnexpected(response)) throw response.body.error;
-    return response.body.choices[0].message.content;
+    return message.content[0].text;
   }
   
   router.post('/insight', async (req, res) => {

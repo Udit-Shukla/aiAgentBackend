@@ -1,11 +1,11 @@
 import express from 'express';
-const router = express.Router();
-import ModelClient, { isUnexpected } from "@azure-rest/ai-inference";
-import { AzureKeyCredential } from "@azure/core-auth";
+import Anthropic from '@anthropic-ai/sdk';
 
-const endpoint = "https://models.github.ai/inference";
-const model = "openai/gpt-4.1";
-const token = process.env["GITHUB_TOKEN"];
+const router = express.Router();
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 const chunkArray = (arr, size) => {
   const chunks = [];
@@ -15,7 +15,7 @@ const chunkArray = (arr, size) => {
   return chunks;
 };
 
-const generateInsightFromChunk = async (client, changedChunk, addedChunk, removedChunk) => {
+const generateInsightFromChunk = async (changedChunk, addedChunk, removedChunk) => {
   const topChanged = changedChunk
     .sort((a, b) => Math.abs(b.costChange) - Math.abs(a.costChange))
     .slice(0, 10)
@@ -54,58 +54,51 @@ ${topRemoved}
 </ul>
 `.trim();
 
-  const response = await client.path("/chat/completions").post({
-    body: {
-      model,
-      temperature: 0.3,
-      top_p: 1,
-      messages: [
-        { role: "system", content: "You summarize product data changes in clean, business-focused HTML." },
-        { role: "user", content: prompt }
-      ]
-    }
+  const message = await anthropic.messages.create({
+    model: 'claude-3-5-sonnet-20241022',
+    max_tokens: 1024,
+    temperature: 0.3,
+    system: "You summarize product data changes in clean, business-focused HTML.",
+    messages: [
+      {
+        role: 'user',
+        content: prompt
+      }
+    ]
   });
 
-  if (isUnexpected(response)) {
-    throw response.body.error;
-  }
-
-  return response.body.choices[0].message.content;
+  return message.content[0].text;
 };
 
-const generateFinalInsight = async (client, insights) => {
+const generateFinalInsight = async (insights) => {
   const finalPrompt = `
 You are an AI summarizer. Merge the following HTML chunks into one clean report using:
-<h2> for section titles and <ul><li> for key insights. No strategy, only what’s in the data.
+<h2> for section titles and <ul><li> for key insights. No strategy, only what's in the data.
 
 Chunks:
 ---
 ${insights.join('\n---\n')}
 `.trim();
 
-  const response = await client.path("/chat/completions").post({
-    body: {
-      model,
-      temperature: 0.3,
-      top_p: 1,
-      messages: [
-        { role: "system", content: "You merge HTML insight chunks into final summaries." },
-        { role: "user", content: finalPrompt }
-      ]
-    }
+  const message = await anthropic.messages.create({
+    model: 'claude-3-5-sonnet-20241022',
+    max_tokens: 2048,
+    temperature: 0.3,
+    system: "You merge HTML insight chunks into final summaries.",
+    messages: [
+      {
+        role: 'user',
+        content: finalPrompt
+      }
+    ]
   });
 
-  if (isUnexpected(response)) {
-    throw response.body.error;
-  }
-
-  return response.body.choices[0].message.content;
+  return message.content[0].text;
 };
 
 router.post('/', async (req, res) => {
   try {
     const { summary, changed, added, removed } = req.body;
-    const client = ModelClient(endpoint, new AzureKeyCredential(token));
 
     const chunkSize = 100;
     const changedChunks = chunkArray(changed, chunkSize);
@@ -119,13 +112,14 @@ router.post('/', async (req, res) => {
       const addedChunk = addedChunks[i] || [];
       const removedChunk = removedChunks[i] || [];
 
-      const chunkInsight = await generateInsightFromChunk(client, changedChunk, addedChunk, removedChunk);
+      const chunkInsight = await generateInsightFromChunk(changedChunk, addedChunk, removedChunk);
       insights.push(chunkInsight);
     }
 
-    const finalInsight = await generateFinalInsight(client, insights);
+    const finalInsight = await generateFinalInsight(insights);
     const cleanedInsight = finalInsight.replace(/```html|```/g, '').trim();
-res.json({ insight: cleanedInsight });
+    
+    res.json({ insight: cleanedInsight });
 
   } catch (err) {
     console.error("Insight generation failed:", err);
