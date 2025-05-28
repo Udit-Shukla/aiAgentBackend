@@ -41,6 +41,13 @@ jobs:
             git reset --hard
             git pull origin main
 
+            echo "🔑 Creating/updating .env file with secrets..."
+            cat > .env << EOF
+            ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+            PORT=8000
+            NODE_ENV=production
+            EOF
+
             echo "🧾 Updating Nginx config if changed..."
             if ! cmp -s infra/nginx.conf /etc/nginx/sites-available/aiagent-backend; then
               cp infra/nginx.conf /etc/nginx/sites-available/aiagent-backend
@@ -58,7 +65,6 @@ jobs:
             fi
 
             echo "🐳 Rebuilding and running Docker container..."
-            if [ ! -f .env ]; then touch .env; fi
             docker stop aiagent-backend || true
             docker rm aiagent-backend || true
             docker build --pull -t aiagent-backend .
